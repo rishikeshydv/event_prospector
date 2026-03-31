@@ -1,38 +1,56 @@
 from functools import lru_cache
+from typing import List
 
-REGISTER_BUTTON_TEXTS = ["Register", "Sign Up", "Join Now"]
+REGISTER_BUTTON_TEXTS = ["Register", "Register Now", "Sign Up", "Join Now", "Get Tickets", "Buy Tickets", "RSVP", "Attend Event", "Book Now", "Enroll Now"]
 
 class EventRegister:
-    def __init__(self, event_url):
-        self.event_url = event_url
+    def __init__(self, event_urls:List[str]):
+        self.event_urls = event_urls
+        self._playwright = None
 
     @lru_cache(maxsize=1)
-    def get_playwright(self):
-        from playwright.sync_api import sync_playwright
-        return sync_playwright().start()
+    async def get_playwright(self):
+        if self._playwright is None:
+            from playwright.async_api import async_playwright
+            self._playwright = await async_playwright().start()
+        return self._playwright
 
+    async def create_browser(self, headless: bool = True):
+        playwright = await self.get_playwright()
+        return await playwright.chromium.launch(headless=headless)
 
-    def create_browser(self,headless: bool = True):
-        return self.get_playwright().chromium.launch(headless=headless)
-
-    def create_page(self,headless: bool = True):
-        browser = self.create_browser(headless=headless)
-        context = browser.new_context()
-        page = context.new_page()
+    async def create_page(self,headless: bool = True):
+        browser = await self.create_browser(headless=headless)
+        context = await browser.new_context()
+        page = await context.new_page()
         return browser, context, page
 
-    def register(self):
-        browser, context, page = self.create_page(headless=False)
+    async def register(self):
+        browser, context, page = await self.create_page(headless=False)
+
+        if len(self.event_urls) == 0:
+            print("No event URLs provided.")
+            return
+
         try:
-            page.goto(self.event_url)
-            for button_text in REGISTER_BUTTON_TEXTS:
-                try:
-                    page.click(f"text={button_text}")
-                    print(f"Clicked on '{button_text}' button.")
-                    break
-                except Exception as e:
-                    print(f"'{button_text}' button not found: {e}")
+            for event_url in self.event_urls:
+                await page.goto(event_url)
+
+                for button_text in REGISTER_BUTTON_TEXTS:
+                    try:
+                        all_buttons = await page.query_selector_all(f"text={button_text}")
+                        if not all_buttons:
+                            raise Exception(f"No buttons found with text '{button_text}'")
+
+                        await all_buttons[0].click()
+                        print(f"Clicked on '{button_text}' button.")
+                        break
+
+                    except Exception as e:
+                        print(f"'{button_text}' button not found: {e}")
+
         finally:
-            browser.close()
+            await context.close()
+            await browser.close()
 
 
